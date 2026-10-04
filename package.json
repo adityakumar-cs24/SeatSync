@@ -4,7 +4,8 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+  "start": "node src/server.js",
+  "dev": "nodemon src/server.js"
   },
   "repository": {
     "type": "git",
@@ -17,5 +18,15 @@
   "bugs": {
     "url": "https://github.com/adityakumar-cs24/SeatSync/issues"
   },
-  "homepage": "https://github.com/adityakumar-cs24/SeatSync#readme"
+  "homepage": "https://github.com/adityakumar-cs24/SeatSync#readme",
+  "dependencies": {
+    "cors": "^2.8.6",
+    "dotenv": "^18.0.5",
+    "express": "^5.2.1",
+    "helmet": "^8.3.0",
+    "morgan": "^1.12.1"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.14"
+  }
 }
