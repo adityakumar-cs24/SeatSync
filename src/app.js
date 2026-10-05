@@ -3,7 +3,7 @@ const cors = require('cors');
 const helmet = require('helmet');
 const morgan = require('morgan');
 const eventRoutes = require('./routes/eventRoutes');
-
+const seatRoutes = require('./routes/seatRoutes');
 const app = express();
 
 app.use(helmet());
@@ -16,5 +16,5 @@ app.get('/health', (req, res) => {
 });
 
 app.use('/api/events', eventRoutes);
-
+app.use('/api/seats', seatRoutes);
 module.exports = app;
