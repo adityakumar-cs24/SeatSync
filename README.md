@@ -28,3 +28,19 @@ The goal is to ensure that even under high concurrency, a seat can be successful
 - Background jobs with BullMQ
 - Real-time seat availability using Socket.io
 - Dockerized development environment
+
+## Running Locally
+
+### Prerequisites
+
+- Node.js v18+
+- Docker & Docker Compose
+
+### Setup
+
+1. Clone the repository and install dependencies:
+
+```bash
+git clone https://github.com/adityakumar-cs24/SeatSync.git
+cd SeatSync
+npm install
