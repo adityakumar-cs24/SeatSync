@@ -17,4 +17,5 @@ app.get('/health', (req, res) => {
 
 app.use('/api/events', eventRoutes);
 app.use('/api/seats', seatRoutes);
+
 module.exports = app;
