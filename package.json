@@ -1,8 +1,8 @@
 {
   "name": "seatsync",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "description": "High-concurrency event booking backend with atomic seat locking and idempotent payments",
+  "main": "src/server.js",
   "scripts": {
     "start": "node src/server.js",
     "dev": "nodemon src/server.js",
@@ -13,7 +13,7 @@
     "url": "git+https://github.com/adityakumar-cs24/SeatSync.git"
   },
   "keywords": [],
-  "author": "",
+  "author": "Aditya Pandey",
   "license": "ISC",
   "type": "commonjs",
   "bugs": {

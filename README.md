@@ -19,28 +19,44 @@ SeatSync explores how to safely handle these concurrent requests using distribut
 
 The goal is to ensure that even under high concurrency, a seat can be successfully booked by only one user.
 
-## Core Features
-- High-concurrency seat reservation
-- Distributed locking with Redis
-- Temporary seat locks with TTL
-- Atomic PostgreSQL transactions
-- Idempotent payment handling
-- Background jobs with BullMQ
-- Real-time seat availability using Socket.io
-- Dockerized development environment
+## Roadmap
+- [x] Project setup, Express server, health check
+- [x] Dockerized PostgreSQL + Redis
+- [x] Database migrations (events, seats, bookings)
+- [x] Atomic seat locking with TTL-based expiry
+- [ ] Load testing with k6
+- [ ] Booking confirmation with idempotency keys
+- [ ] Redis lock layer
+- [ ] Payment webhooks
+- [ ] Background jobs (BullMQ)
+- [ ] Real-time seat updates (Socket.io)
 
 ## Running Locally
 
 ### Prerequisites
-
 - Node.js v18+
 - Docker & Docker Compose
 
 ### Setup
-
-1. Clone the repository and install dependencies:
-
+1. Clone and install dependencies:
 ```bash
-git clone https://github.com/adityakumar-cs24/SeatSync.git
-cd SeatSync
-npm install
+   git clone https://github.com/adityakumar-cs24/SeatSync.git
+   cd SeatSync
+   npm install
+```
+2. Copy the env file:
+```bash
+   cp .env.example .env
+```
+3. Start PostgreSQL and Redis:
+```bash
+   docker-compose up -d
+```
+4. Run migrations:
+```bash
+   npm run migrate up
+```
+5. Start the dev server:
+```bash
+   npm run dev
+```
