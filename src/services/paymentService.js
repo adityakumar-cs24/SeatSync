@@ -2,9 +2,11 @@ const crypto = require('crypto');
 
 const SIMULATED_LATENCY_MS = 300;
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const stats = { charges: 0, refunds: 0 }; 
 
 // Mock gateway. A real adapter (e.g. Stripe) will expose the same charge/refund interface.
 async function charge({ idempotencyKey, simulate }) {
+     stats.charges += 1;  
   await sleep(SIMULATED_LATENCY_MS);
 
   if (simulate === 'fail' && process.env.NODE_ENV !== 'production') {
@@ -18,7 +20,11 @@ async function charge({ idempotencyKey, simulate }) {
 }
 
 async function refund(paymentId) {
+    stats.refunds += 1;  
   console.log(`[mock-payment] refund ${paymentId}`);
 }
+function getStats() {
+  return { ...stats };
+}
 
-module.exports = { charge, refund };
+module.exports = { charge, refund, getStats };

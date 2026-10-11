@@ -19,5 +19,8 @@ app.get('/health', (req, res) => {
 app.use('/api/events', eventRoutes);
 app.use('/api/seats', seatRoutes);
 app.use('/api/bookings', bookingRoutes);
+if (process.env.NODE_ENV !== 'production') {
+  app.use('/api/test', require('./routes/testRoutes'));
+}
 
 module.exports = app;
