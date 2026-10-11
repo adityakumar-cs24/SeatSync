@@ -117,6 +117,22 @@ k6 run -e SEAT_ID=$SEAT_ID -e VUS=500 tests/load/seat-lock-test.js      # 500 us
 
 Note: this measures worst-case contention on a single row. Real traffic is spread across many seats, which is lower contention per row.
 
+### Booking concurrency
+
+`tests/load/booking-test.js` builds its own event, seat and lock, then fires N parallel booking requests. It fails unless exactly one booking is created **and the payment gateway is charged exactly once** (counted by the mock gateway, exposed through a dev-only endpoint that is not mounted in production).
+
+| Scenario | Requests | 201 | 409 | 200/202 (replay) | Unexpected | Gateway charges | DB rows |
+|---|---|---|---|---|---|---|---|
+| Different idempotency keys (double-click race) | 50 | 1 | 49 | 0 | 0 | 1 | 1 `CONFIRMED` |
+| Same idempotency key (retry storm) | 50 | 1 | 0 | 49 | 0 | 1 | 1 `CONFIRMED` |
+
+```bash
+k6 run -e MODE=different_keys -e VUS=50 tests/load/booking-test.js
+k6 run -e MODE=same_key -e VUS=50 tests/load/booking-test.js
+```
+
+The charge counter is in-memory and per process, so it is only valid for a single server instance.
+
 ## Design decisions
 
 - **Raw SQL with `pg`, no ORM.** The core guarantee depends on one precise atomic statement, so I wanted full control over the exact SQL.
