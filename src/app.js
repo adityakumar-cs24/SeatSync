@@ -5,6 +5,7 @@ const morgan = require('morgan');
 const eventRoutes = require('./routes/eventRoutes');
 const seatRoutes = require('./routes/seatRoutes');
 const bookingRoutes = require('./routes/bookingRoutes');
+const authRoutes = require('./routes/authRoutes');
 const app = express();
 
 app.use(helmet());
@@ -19,6 +20,8 @@ app.get('/health', (req, res) => {
 app.use('/api/events', eventRoutes);
 app.use('/api/seats', seatRoutes);
 app.use('/api/bookings', bookingRoutes);
+app.use('/api/auth', authRoutes);
+
 if (process.env.NODE_ENV !== 'production') {
   app.use('/api/test', require('./routes/testRoutes'));
 }
