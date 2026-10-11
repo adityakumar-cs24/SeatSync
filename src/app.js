@@ -4,6 +4,7 @@ const helmet = require('helmet');
 const morgan = require('morgan');
 const eventRoutes = require('./routes/eventRoutes');
 const seatRoutes = require('./routes/seatRoutes');
+const bookingRoutes = require('./routes/bookingRoutes');
 const app = express();
 
 app.use(helmet());
@@ -17,5 +18,6 @@ app.get('/health', (req, res) => {
 
 app.use('/api/events', eventRoutes);
 app.use('/api/seats', seatRoutes);
+app.use('/api/bookings', bookingRoutes);
 
 module.exports = app;
