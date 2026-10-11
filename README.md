@@ -11,13 +11,14 @@ A high-concurrency event booking backend inspired by BookMyShow and IRCTC. It is
 - [x] Atomic seat locking with TTL-based expiry
 - [x] Load testing with k6 (100 and 500 concurrent users)
 - [x] Booking confirmation with idempotency keys
+- [ ] Authentication: register, login, access tokens (done); refresh tokens and route protection (next)
 - [ ] Payment webhooks
 - [ ] Redis lock layer
 - [x] Background jobs (BullMQ reconciler)
 - [ ] Real-time seat updates (Socket.io)
 
 ## Tech Stack
-**Used so far:** Node.js, Express 5, PostgreSQL 16 (raw `pg`, no ORM), `node-pg-migrate`, Docker Compose, Redis + BullMQ, k6
+**Used so far:** Node.js, Express 5, PostgreSQL 16 (raw `pg`, no ORM), `node-pg-migrate`, Docker Compose, Redis + BullMQ, JWT + bcrypt, k6
 
 **Planned:** Socket.io, Stripe (test mode)
 
@@ -32,6 +33,9 @@ A high-concurrency event booking backend inspired by BookMyShow and IRCTC. It is
 | POST | `/api/seats/:seatId/release` | Release a seat you hold (`{ "userId": "<uuid>" }`) | 200, 400, 404 |
 | POST | `/api/bookings` | Confirm a locked seat. Needs `Idempotency-Key` header and `{ "seatId", "userId" }` | 201, 200 (replay), 202, 400, 402, 404, 409, 422 |
 | GET | `/api/bookings/:bookingId` | Fetch a booking | 200, 400, 404 |
+| POST | `/api/auth/register` | Create an account (`{ "email", "name", "password" }`) | 201, 400, 409 |
+| POST | `/api/auth/login` | Log in, returns an access token | 200, 400, 401 |
+| GET | `/api/auth/me` | Current user (needs `Authorization: Bearer <token>`) | 200, 401 |
 
 ## How double-booking is prevented
 
@@ -59,6 +63,19 @@ ON bookings (seat_id) WHERE status = 'CONFIRMED';
 ```
 
 `bookings.idempotency_key` is also unique, so a retried request cannot create a second booking (the booking flow itself is the next milestone).
+
+## Authentication
+
+Users register with email and password and receive a short-lived JWT access token (15 minutes, HS256).
+
+- **Passwords** are hashed with bcrypt (cost 12). Passwords over 72 bytes are rejected because bcrypt silently ignores everything beyond that.
+- **Login errors are uniform.** An unknown email and a wrong password return the same `401` message, and an unknown email is still compared against a dummy hash so response time does not reveal which emails exist.
+- **Duplicate emails are decided by the database.** A unique constraint resolves concurrent signups; there is no check-then-insert race.
+- **The JWT algorithm is pinned** to HS256 when verifying, so unsigned (`alg: none`) and algorithm-confusion tokens are rejected.
+- **Expired and invalid tokens** return distinct codes (`TOKEN_EXPIRED`, `TOKEN_INVALID`) so a client knows when to refresh.
+- The server refuses to start if `JWT_ACCESS_SECRET` is missing or shorter than 32 characters.
+
+Status: register, login and token verification are in place. Refresh tokens, logout and protecting the seat and booking routes (which still take `userId` from the request body) are the next milestones.
 
 ## Booking and idempotency
 
