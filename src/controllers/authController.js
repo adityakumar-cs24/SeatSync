@@ -57,9 +57,10 @@ async function login(req, res) {
     if (result.error) {
       return res.status(401).json({ error: 'Invalid email or password' });
     }
-    res.status(200).json({
+     res.status(200).json({
       user: result.user,
       accessToken: result.accessToken,
+      refreshToken: result.refreshToken,
       tokenType: 'Bearer',
     });
   } catch (err) {
@@ -78,5 +79,53 @@ async function me(req, res) {
     res.status(500).json({ error: 'Internal server error' });
   }
 }
+function readRefreshToken(req) {
+  const { refreshToken } = req.body ?? {};
+  const valid =
+    typeof refreshToken === 'string' && refreshToken.length > 0 && refreshToken.length <= 512;
+  return valid ? refreshToken : null;
+}
 
-module.exports = { register, login, me };
+async function refresh(req, res) {
+  try {
+    const refreshToken = readRefreshToken(req);
+    if (!refreshToken) return res.status(400).json({ error: 'refreshToken is required' });
+
+    const result = await authService.refresh(refreshToken);
+
+    if (result.error) {
+      if (result.error === 'REUSE_DETECTED') {
+        console.warn('[auth] refresh token reuse detected, session revoked');
+      }
+      // Same response for unknown, expired and reused tokens, so callers learn nothing.
+      return res.status(401).json({
+        error: 'Invalid or expired refresh token',
+        code: 'REFRESH_TOKEN_INVALID',
+      });
+    }
+
+    res.status(200).json({
+      accessToken: result.accessToken,
+      refreshToken: result.refreshToken,
+      tokenType: 'Bearer',
+    });
+  } catch (err) {
+    console.error('Error refreshing token:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+}
+
+async function logout(req, res) {
+  try {
+    const refreshToken = readRefreshToken(req);
+    if (!refreshToken) return res.status(400).json({ error: 'refreshToken is required' });
+
+    await authService.logout(refreshToken);
+    res.status(204).send();
+  } catch (err) {
+    console.error('Error logging out:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+}
+
+module.exports = { register, login, refresh, logout, me };
