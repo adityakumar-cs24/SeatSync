@@ -10,7 +10,7 @@ A high-concurrency event booking backend inspired by BookMyShow and IRCTC. It is
 - [x] Database migrations (events, seats, bookings)
 - [x] Atomic seat locking with TTL-based expiry
 - [x] Load testing with k6 (100 and 500 concurrent users)
-- [ ] Booking confirmation with idempotency keys
+- [x] Booking confirmation with idempotency keys
 - [ ] Payment webhooks
 - [ ] Redis lock layer
 - [ ] Background jobs (BullMQ)
@@ -30,6 +30,8 @@ A high-concurrency event booking backend inspired by BookMyShow and IRCTC. It is
 | GET | `/api/events/:eventId/seats` | List seats of an event | 200, 400, 404 |
 | POST | `/api/seats/:seatId/lock` | Lock a seat for 8 minutes (`{ "userId": "<uuid>" }`) | 200, 400, 404, 409 |
 | POST | `/api/seats/:seatId/release` | Release a seat you hold (`{ "userId": "<uuid>" }`) | 200, 400, 404 |
+| POST | `/api/bookings` | Confirm a locked seat. Needs `Idempotency-Key` header and `{ "seatId", "userId" }` | 201, 200 (replay), 202, 400, 402, 404, 409, 422 |
+| GET | `/api/bookings/:bookingId` | Fetch a booking | 200, 400, 404 |
 
 ## How double-booking is prevented
 
@@ -57,6 +59,37 @@ ON bookings (seat_id) WHERE status = 'CONFIRMED';
 ```
 
 `bookings.idempotency_key` is also unique, so a retried request cannot create a second booking (the booking flow itself is the next milestone).
+
+## Booking and idempotency
+
+`POST /api/bookings` converts a locked seat into a confirmed booking. The `Idempotency-Key` header is required: the client generates one key per purchase intent and reuses it on every retry.
+
+Payment is mocked behind a `charge()` / `refund()` interface, so a real gateway adapter (e.g. Stripe) can replace it without touching the booking logic. The `simulate: "fail"` request field is a test hook that is disabled when `NODE_ENV=production`.
+
+**Flow (3 phases, payment outside any DB transaction):**
+1. Short transaction: `SELECT ... FOR UPDATE` on the seat, verify the caller holds an active lock, insert a `PENDING` booking.
+2. Charge the payment gateway. Only the request that inserted the `PENDING` row ever reaches this step.
+3. Short transaction: mark the seat `BOOKED` and the booking `CONFIRMED`. If payment failed, mark the booking `FAILED` and keep the seat locked so the user can retry with a new key.
+
+The payment call is deliberately outside the transactions: a slow gateway must not hold a row lock or a pooled DB connection.
+
+**Verified behaviour:**
+
+| Scenario | Result |
+|---|---|
+| Same key retried after success | 200, same booking returned, no second charge |
+| Same key while the first request is still processing | 202 |
+| 20 parallel requests with the same key | exactly one 201, nineteen 202 |
+| 10 parallel double-clicks with different keys | exactly one 201, nine 409 |
+| Payment declined, same key retried | 402, same failed booking returned |
+| Payment declined, retry with a new key | 201 |
+| Same key reused for a different user or seat | 422 |
+| Insert a second `CONFIRMED` booking for a booked seat directly in SQL | rejected by `idx_one_confirmed_booking_per_seat` |
+
+**Known limitations (planned):**
+- A crash between phase 1 and phase 3 leaves a `PENDING` booking that blocks the seat. A background reconciler (BullMQ) will resolve stale `PENDING` bookings.
+- A real gateway timeout leaves the payment outcome unknown. That case should stay `PENDING` and be resolved by a payment webhook.
+- No authentication yet: `userId` comes from the request body.
 
 ## Concurrency testing
 
