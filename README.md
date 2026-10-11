@@ -13,13 +13,13 @@ A high-concurrency event booking backend inspired by BookMyShow and IRCTC. It is
 - [x] Booking confirmation with idempotency keys
 - [ ] Payment webhooks
 - [ ] Redis lock layer
-- [ ] Background jobs (BullMQ)
+- [x] Background jobs (BullMQ reconciler)
 - [ ] Real-time seat updates (Socket.io)
 
 ## Tech Stack
-**Used so far:** Node.js, Express 5, PostgreSQL 16 (raw `pg`, no ORM), `node-pg-migrate`, Docker Compose, k6
+**Used so far:** Node.js, Express 5, PostgreSQL 16 (raw `pg`, no ORM), `node-pg-migrate`, Docker Compose, Redis + BullMQ, k6
 
-**Planned:** Redis (container already provisioned), BullMQ, Socket.io, Stripe (test mode)
+**Planned:** Socket.io, Stripe (test mode)
 
 ## API
 
@@ -87,9 +87,33 @@ The payment call is deliberately outside the transactions: a slow gateway must n
 | Insert a second `CONFIRMED` booking for a booked seat directly in SQL | rejected by `idx_one_confirmed_booking_per_seat` |
 
 **Known limitations (planned):**
-- A crash between phase 1 and phase 3 leaves a `PENDING` booking that blocks the seat. A background reconciler (BullMQ) will resolve stale `PENDING` bookings.
+- A crash between phase 1 and phase 3 leaves a `PENDING` booking that blocks the seat until the background reconciler fails it (see below).
 - A real gateway timeout leaves the payment outcome unknown. That case should stay `PENDING` and be resolved by a payment webhook.
 - No authentication yet: `userId` comes from the request body.
+
+## Background reconciler
+
+A separate worker process (`npm run worker`) runs a BullMQ job every 30 seconds (`RECONCILER_INTERVAL_MS`). It does two things:
+
+1. **Fails stale `PENDING` bookings** (older than `STALE_PENDING_SECONDS`, default 300). A server crash between booking phase 1 and phase 3 would otherwise leave an orphaned row that blocks the seat forever.
+2. **Releases expired locks**, so the stored seat status matches reality. Seats with a `PENDING` booking are skipped: a payment may still be in flight.
+
+Correctness does not depend on this job. Expired locks are already claimable through the atomic lock query; the reconciler cleans up state and unblocks orphaned bookings.
+
+Why BullMQ instead of `setInterval`: with several worker instances, a repeatable job is executed by one worker at a time, and the schedule is upserted so restarts never duplicate it.
+
+Verified by simulating a crash (orphaned `PENDING` booking, 10 minutes old) alongside three other states:
+
+| Seat state before | After reconciler |
+|---|---|
+| Expired lock, no booking | `AVAILABLE` |
+| Valid lock + stale `PENDING` booking | booking `FAILED (STALE_PENDING_TIMEOUT)`, seat bookable again |
+| Expired lock + fresh `PENDING` booking (payment in flight) | untouched |
+| Valid lock, nothing else | untouched |
+
+**Known limitations:**
+- With a real gateway, failing a stale `PENDING` booking outright is unsafe because the payment may have succeeded. The reconciler would first query the gateway by idempotency key.
+- The stale threshold must stay longer than the gateway timeout, otherwise a slow but legitimate payment can be failed.
 
 ## Concurrency testing
 
@@ -187,5 +211,10 @@ tests/load/      k6 concurrency test
 ```bash
    npm run dev
 ```
+
+   In a second terminal, start the background worker:
+   ```bash
+   npm run worker
+   ```
 
 The credentials in `docker-compose.yml` are for local development only. Real secrets must come from environment variables or a secrets manager.
