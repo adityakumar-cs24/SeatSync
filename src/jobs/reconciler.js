@@ -28,11 +28,10 @@ async function startReconciler() {
     console.error(`[reconciler] job ${job?.id} failed:`, err.message);
   });
 
-  async function close() {
+   async function close() {
     await worker.close();
     await queue.close();
-    await queueConnection.quit();
-    await workerConnection.quit();
+    await Promise.allSettled([queueConnection.quit(), workerConnection.quit()]);
   }
 
   return { close };
