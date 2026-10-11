@@ -11,7 +11,7 @@ A high-concurrency event booking backend inspired by BookMyShow and IRCTC. It is
 - [x] Atomic seat locking with TTL-based expiry
 - [x] Load testing with k6 (100 and 500 concurrent users)
 - [x] Booking confirmation with idempotency keys
-- [ ] Authentication: register, login, access tokens (done); refresh tokens and route protection (next)
+- [ ] Authentication: register, login, access and refresh tokens (done); route protection (next)
 - [ ] Payment webhooks
 - [ ] Redis lock layer
 - [x] Background jobs (BullMQ reconciler)
@@ -35,6 +35,8 @@ A high-concurrency event booking backend inspired by BookMyShow and IRCTC. It is
 | GET | `/api/bookings/:bookingId` | Fetch a booking | 200, 400, 404 |
 | POST | `/api/auth/register` | Create an account (`{ "email", "name", "password" }`) | 201, 400, 409 |
 | POST | `/api/auth/login` | Log in, returns an access token | 200, 400, 401 |
+| POST | `/api/auth/refresh` | Exchange a refresh token for a new access and refresh token | 200, 400, 401 |
+| POST | `/api/auth/logout` | Revoke the session (`{ "refreshToken" }`) | 204, 400 |
 | GET | `/api/auth/me` | Current user (needs `Authorization: Bearer <token>`) | 200, 401 |
 
 ## How double-booking is prevented
@@ -75,7 +77,13 @@ Users register with email and password and receive a short-lived JWT access toke
 - **Expired and invalid tokens** return distinct codes (`TOKEN_EXPIRED`, `TOKEN_INVALID`) so a client knows when to refresh.
 - The server refuses to start if `JWT_ACCESS_SECRET` is missing or shorter than 32 characters.
 
-Status: register, login and token verification are in place. Refresh tokens, logout and protecting the seat and booking routes (which still take `userId` from the request body) are the next milestones.
+- **Refresh tokens** are random opaque strings (not JWTs). Only their SHA-256 hash is stored, so a database leak does not expose usable tokens.
+- **Rotation:** every refresh revokes the presented token and issues a new one in the same transaction.
+- **Reuse detection:** presenting an already-used token means two parties hold it (theft or a replayed request), so the whole session (token family) is revoked.
+- **Refresh races are atomic.** Revocation is a single `UPDATE ... WHERE revoked_at IS NULL`, the same pattern as seat locking. Ten parallel refreshes with one token produce exactly one success.
+- **Logout** revokes the whole session and always returns `204`, so it cannot be used to probe for valid tokens.
+
+Known limitations: an access token stays valid for up to 15 minutes after logout (it is stateless; the short expiry is the trade-off). Two browser tabs refreshing the same token at once will both be logged out; production systems usually allow a short grace window. Expired refresh tokens are not purged yet, and login and refresh are not rate limited.
 
 ## Booking and idempotency
 
