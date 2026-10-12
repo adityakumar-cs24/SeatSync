@@ -12,7 +12,7 @@ A high-concurrency event booking backend inspired by BookMyShow and IRCTC. It is
 - [x] Load testing with k6 (100 and 500 concurrent users)
 - [x] Booking confirmation with idempotency keys
 - [x] Authentication: register, login, access and refresh tokens, protected seat and booking routes
-- [ ] Roles (admin-only event creation)
+- [x] Roles (admin-only event creation)
 - [ ] Payment webhooks
 - [ ] Redis lock layer
 - [x] Background jobs (BullMQ reconciler)
@@ -28,7 +28,7 @@ A high-concurrency event booking backend inspired by BookMyShow and IRCTC. It is
 | Method | Endpoint | Description | Responses |
 |---|---|---|---|
 | GET | `/health` | Health check | 200 |
-| POST | `/api/events` | Create an event with N seats (A1..AN) | 201, 400 |
+| POST | `/api/events` | Create an event with N seats (A1..AN). **Admin only** | 201, 400, 401, 403 |
 | GET | `/api/events/:eventId/seats` | List seats of an event | 200, 400, 404 |
 | POST | `/api/seats/:seatId/lock` | Lock a seat for 8 minutes (requires auth) | 200, 400, 404, 409 |
 | POST | `/api/seats/:seatId/release` | Release a seat you hold (requires auth) | 200, 400, 404 |
@@ -89,7 +89,7 @@ Known limitations: an access token stays valid for up to 15 minutes after logout
 **Authorization:**
 - Seat and booking routes require a Bearer token. The acting user always comes from the verified token; a `userId` in the request body is ignored, so identity cannot be spoofed.
 - `GET /api/bookings/:id` returns `404` (not `403`) for someone else's booking, so booking ids cannot be probed.
-- `POST /api/events` is still unauthenticated; admin roles are planned.
+- **Roles:** `POST /api/events` is admin-only (`403` for normal users). The role is read from the database on every admin request, not from the token, so demoting an admin takes effect immediately instead of after the token expires. A `role` sent at registration is ignored, and admins can only be created with a CLI script (`npm run make-admin -- <email>`), so there is no API path to privilege escalation.
 - **Foreign keys** tie `seats.locked_by` and `bookings.user_id` to `users`, so the database itself rejects a lock or booking for a user that does not exist. A validly signed token for a deleted user returns `401`, not `500`.
 
 ## Booking and idempotency
@@ -158,6 +158,16 @@ k6 fires N virtual users at the **same seat** at the same instant. The test is c
 
 Results are cross-checked against the database: one row, `LOCKED`, a single `locked_by`.
 
+Event creation is admin-only, so the load tests log in as an admin account. Prepare it once (local throwaway credentials; never reuse real ones, and never commit them):
+
+```bash
+export ADMIN_EMAIL=loadtest-admin@example.com
+export ADMIN_PASSWORD=load-admin-pass-1
+curl -X POST localhost:5000/api/auth/register -H "Content-Type: application/json" \
+  -d "{\"email\":\"$ADMIN_EMAIL\",\"name\":\"Load Admin\",\"password\":\"$ADMIN_PASSWORD\"}"
+npm run make-admin -- "$ADMIN_EMAIL"
+```
+
 Each run creates its own event, seat and real registered users, so nothing needs to be prepared by hand and runs do not interfere with each other. Start the server with a low bcrypt cost so registering hundreds of users stays quick (test only; never use this in production):
 
 ```bash
@@ -173,7 +183,7 @@ Note: this measures worst-case contention on a single row. Real traffic is sprea
 
 ### Booking concurrency
 
-`tests/load/booking-test.js` registers a user, builds its own event and seat, locks it, then fires N parallel booking requests. It fails unless exactly one booking is created **and the payment gateway is charged exactly once** (counted by the mock gateway, exposed through a dev-only endpoint that is not mounted in production).
+`tests/load/booking-test.js` registers a user, has an admin account create a single-seat event, locks the seat, then fires N parallel booking requests. It fails unless exactly one booking is created **and the payment gateway is charged exactly once** (counted by the mock gateway, exposed through a dev-only endpoint that is not mounted in production).
 
 | Scenario | Requests | 201 | 409 | 200/202 (replay) | Unexpected | Gateway charges | DB rows |
 |---|---|---|---|---|---|---|---|
