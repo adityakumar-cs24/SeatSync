@@ -197,6 +197,10 @@ k6 run -e MODE=same_key -e VUS=50 tests/load/booking-test.js
 
 The charge counter is in-memory and per process, so it is only valid for a single server instance.
 
+## Found by load testing
+
+Fifty parallel retries with the same idempotency key exposed a connection-pool starvation bug. `reserveForPayment` held a pooled client open while calling `pool.query` for the idempotency lookup. With more concurrent requests than pool connections (50 against a pool of 20), every held client ended up waiting for a second connection that could never be released, until the 5 second connection timeout fired and the requests failed with `500`. Payments stayed correct (one booking, one charge) but availability did not. The fix runs the lookup on the client already held, so a request never needs two connections at once. Earlier runs passed only because they finished too quickly to fill the pool.
+
 ## Design decisions
 
 - **Raw SQL with `pg`, no ORM.** The core guarantee depends on one precise atomic statement, so I wanted full control over the exact SQL.
