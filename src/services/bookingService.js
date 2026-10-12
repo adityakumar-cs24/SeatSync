@@ -1,8 +1,8 @@
 const pool = require('../config/db');
 const paymentService = require('./paymentService');
 
-async function findBookingByKey(idempotencyKey) {
-  const { rows } = await pool.query(
+async function findBookingByKey(idempotencyKey, db = pool) {
+  const { rows } = await db.query(
     'SELECT * FROM bookings WHERE idempotency_key = $1',
     [idempotencyKey]
   );
@@ -48,7 +48,7 @@ async function reserveForPayment({ seatId, userId, idempotencyKey }) {
     if (!lockHeld) {
       await client.query('ROLLBACK');
       // A retry that raced with the original request may find the seat already BOOKED.
-      const existing = await findBookingByKey(idempotencyKey);
+      const existing = await findBookingByKey(idempotencyKey, client);
       return existing
         ? replayResult(existing, { seatId, userId })
         : { code: 'LOCK_NOT_HELD' };
@@ -65,7 +65,7 @@ async function reserveForPayment({ seatId, userId, idempotencyKey }) {
     if (rows.length === 0) {
       // Same key was inserted by a concurrent request: treat as replay.
       await client.query('ROLLBACK');
-      const existing = await findBookingByKey(idempotencyKey);
+      const existing = await findBookingByKey(idempotencyKey, client);
       return replayResult(existing, { seatId, userId });
     }
 
