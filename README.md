@@ -11,7 +11,8 @@ A high-concurrency event booking backend inspired by BookMyShow and IRCTC. It is
 - [x] Atomic seat locking with TTL-based expiry
 - [x] Load testing with k6 (100 and 500 concurrent users)
 - [x] Booking confirmation with idempotency keys
-- [ ] Authentication: register, login, access and refresh tokens (done); route protection (next)
+- [x] Authentication: register, login, access and refresh tokens, protected seat and booking routes
+- [ ] Roles (admin-only event creation)
 - [ ] Payment webhooks
 - [ ] Redis lock layer
 - [x] Background jobs (BullMQ reconciler)
@@ -29,9 +30,9 @@ A high-concurrency event booking backend inspired by BookMyShow and IRCTC. It is
 | GET | `/health` | Health check | 200 |
 | POST | `/api/events` | Create an event with N seats (A1..AN) | 201, 400 |
 | GET | `/api/events/:eventId/seats` | List seats of an event | 200, 400, 404 |
-| POST | `/api/seats/:seatId/lock` | Lock a seat for 8 minutes (`{ "userId": "<uuid>" }`) | 200, 400, 404, 409 |
-| POST | `/api/seats/:seatId/release` | Release a seat you hold (`{ "userId": "<uuid>" }`) | 200, 400, 404 |
-| POST | `/api/bookings` | Confirm a locked seat. Needs `Idempotency-Key` header and `{ "seatId", "userId" }` | 201, 200 (replay), 202, 400, 402, 404, 409, 422 |
+| POST | `/api/seats/:seatId/lock` | Lock a seat for 8 minutes (requires auth) | 200, 400, 404, 409 |
+| POST | `/api/seats/:seatId/release` | Release a seat you hold (requires auth) | 200, 400, 404 |
+| POST | `/api/bookings` | Confirm a locked seat. Needs `Idempotency-Key` header and `{ "seatId" }`, requires auth | 201, 200 (replay), 202, 400, 402, 404, 409, 422 |
 | GET | `/api/bookings/:bookingId` | Fetch a booking | 200, 400, 404 |
 | POST | `/api/auth/register` | Create an account (`{ "email", "name", "password" }`) | 201, 400, 409 |
 | POST | `/api/auth/login` | Log in, returns an access token | 200, 400, 401 |
@@ -84,6 +85,11 @@ Users register with email and password and receive a short-lived JWT access toke
 - **Logout** revokes the whole session and always returns `204`, so it cannot be used to probe for valid tokens.
 
 Known limitations: an access token stays valid for up to 15 minutes after logout (it is stateless; the short expiry is the trade-off). Two browser tabs refreshing the same token at once will both be logged out; production systems usually allow a short grace window. Expired refresh tokens are not purged yet, and login and refresh are not rate limited.
+
+**Authorization:**
+- Seat and booking routes require a Bearer token. The acting user always comes from the verified token; a `userId` in the request body is ignored, so identity cannot be spoofed.
+- `GET /api/bookings/:id` returns `404` (not `403`) for someone else's booking, so booking ids cannot be probed.
+- `POST /api/events` is still unauthenticated; admin roles are planned.
 
 ## Booking and idempotency
 
