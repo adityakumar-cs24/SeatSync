@@ -19,6 +19,9 @@ async function lockSeat(req, res) {
 
     res.status(200).json({ message: 'Seat locked successfully', seat: result.seat });
   } catch (err) {
+    if (err.code === '23503') {
+      return res.status(401).json({ error: 'User no longer exists' });
+    }
     console.error('Error locking seat:', err);
     res.status(500).json({ error: 'Internal server error' });
   }
