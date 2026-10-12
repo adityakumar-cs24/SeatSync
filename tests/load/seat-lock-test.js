@@ -1,5 +1,6 @@
 import http from 'k6/http';
 import { Counter } from 'k6/metrics';
+import { createEvent } from './helpers.js';
 
 const BASE_URL = __ENV.BASE_URL || 'http://localhost:5000';
 const VUS = parseInt(__ENV.VUS || '100', 10);
@@ -33,13 +34,7 @@ export const options = {
 export function setup() {
   const runId = `${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
 
-  const eventRes = http.post(
-    `${BASE_URL}/api/events`,
-    JSON.stringify({ name: `LockLoad-${runId}`, eventTime: '2030-01-01T19:00:00Z', totalSeats: 1 }),
-    { headers: JSON_HEADERS }
-  );
-  if (eventRes.status !== 201) throw new Error(`event creation failed: ${eventRes.status}`);
-  const seatId = eventRes.json('seats.0.id');
+  const seatId = createEvent(`LockLoad-${runId}`, 1);
 
   const emails = Array.from({ length: VUS }, (_, i) => `lock-${runId}-${i}@loadtest.example.com`);
 

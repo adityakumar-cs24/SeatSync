@@ -1,5 +1,6 @@
 import http from 'k6/http';
 import { Counter } from 'k6/metrics';
+import { createEvent } from './helpers.js';
 
 const BASE_URL = __ENV.BASE_URL || 'http://localhost:5000';
 const VUS = parseInt(__ENV.VUS || '50', 10);
@@ -63,13 +64,7 @@ export function setup() {
   const token = loginRes.json('accessToken');
   const authHeaders = { ...JSON_HEADERS, Authorization: `Bearer ${token}` };
 
-  const eventRes = http.post(
-    `${BASE_URL}/api/events`,
-    JSON.stringify({ name: `BookingLoad-${MODE}-${runId}`, eventTime: '2030-01-01T19:00:00Z', totalSeats: 1 }),
-    { headers: JSON_HEADERS }
-  );
-  if (eventRes.status !== 201) throw new Error(`event creation failed: ${eventRes.status}`);
-  const seatId = eventRes.json('seats.0.id');
+  const seatId = createEvent(`BookingLoad-${MODE}-${runId}`, 1);
 
   const lockRes = http.post(`${BASE_URL}/api/seats/${seatId}/lock`, null, { headers: authHeaders });
   if (lockRes.status !== 200) throw new Error(`seat lock failed: ${lockRes.status}`);
