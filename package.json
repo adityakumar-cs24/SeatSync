@@ -8,7 +8,8 @@
     "dev": "nodemon src/server.js",
     "migrate": "node-pg-migrate",
     "worker": "node src/worker.js",
-    "dev:worker": "nodemon src/worker.js"
+    "dev:worker": "nodemon src/worker.js",
+    "make-admin": "node scripts/make-admin.js"
   },
   "repository": {
     "type": "git",

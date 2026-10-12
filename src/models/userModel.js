@@ -4,7 +4,7 @@ async function createUser({ email, name, passwordHash }) {
   const { rows } = await pool.query(
     `INSERT INTO users (email, name, password_hash)
      VALUES ($1, $2, $3)
-     RETURNING id, email, name, created_at`,
+     RETURNING id, email, name, role, created_at`,
     [email, name, passwordHash]
   );
   return rows[0];
@@ -20,7 +20,7 @@ async function findByEmail(email) {
 
 async function findById(id) {
   const { rows } = await pool.query(
-    'SELECT id, email, name, created_at FROM users WHERE id = $1',
+    'SELECT id, email, name, role, created_at FROM users WHERE id = $1',
     [id]
   );
   return rows[0] || null;
