@@ -4,6 +4,7 @@ import { Counter } from 'k6/metrics';
 const BASE_URL = __ENV.BASE_URL || 'http://localhost:5000';
 const VUS = parseInt(__ENV.VUS || '50', 10);
 const MODE = __ENV.MODE || 'different_keys'; // 'different_keys' | 'same_key'
+const PASSWORD = 'load-test-pass-1';
 const JSON_HEADERS = { 'Content-Type': 'application/json' };
 
 const bookingCreated = new Counter('booking_created');       // 201
@@ -37,30 +38,40 @@ export const options = {
   thresholds,
 };
 
+// One real user registers, logs in and locks a fresh single-seat event.
+// All virtual users then act as that same user (a double-click or retry storm).
 export function setup() {
   if (MODE !== 'different_keys' && MODE !== 'same_key') {
     throw new Error("MODE must be 'different_keys' or 'same_key'");
   }
+  const runId = `${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
+  const email = `booking-${runId}@loadtest.example.com`;
 
-  // Each run builds its own fresh event, seat and lock.
+  const registerRes = http.post(
+    `${BASE_URL}/api/auth/register`,
+    JSON.stringify({ email, name: 'Load User', password: PASSWORD }),
+    { headers: JSON_HEADERS }
+  );
+  if (registerRes.status !== 201) throw new Error(`register failed: ${registerRes.status}`);
+
+  const loginRes = http.post(
+    `${BASE_URL}/api/auth/login`,
+    JSON.stringify({ email, password: PASSWORD }),
+    { headers: JSON_HEADERS }
+  );
+  if (loginRes.status !== 200) throw new Error(`login failed: ${loginRes.status}`);
+  const token = loginRes.json('accessToken');
+  const authHeaders = { ...JSON_HEADERS, Authorization: `Bearer ${token}` };
+
   const eventRes = http.post(
     `${BASE_URL}/api/events`,
-    JSON.stringify({
-      name: `BookingLoad-${MODE}-${Date.now()}`,
-      eventTime: '2030-01-01T19:00:00Z',
-      totalSeats: 1,
-    }),
+    JSON.stringify({ name: `BookingLoad-${MODE}-${runId}`, eventTime: '2030-01-01T19:00:00Z', totalSeats: 1 }),
     { headers: JSON_HEADERS }
   );
   if (eventRes.status !== 201) throw new Error(`event creation failed: ${eventRes.status}`);
   const seatId = eventRes.json('seats.0.id');
 
-  const userId = fakeUuid();
-  const lockRes = http.post(
-    `${BASE_URL}/api/seats/${seatId}/lock`,
-    JSON.stringify({ userId }),
-    { headers: JSON_HEADERS }
-  );
+  const lockRes = http.post(`${BASE_URL}/api/seats/${seatId}/lock`, null, { headers: authHeaders });
   if (lockRes.status !== 200) throw new Error(`seat lock failed: ${lockRes.status}`);
 
   const statsRes = http.get(`${BASE_URL}/api/test/payment-stats`);
@@ -68,12 +79,7 @@ export function setup() {
     throw new Error('payment-stats endpoint unavailable (is NODE_ENV=production?)');
   }
 
-  return {
-    seatId,
-    userId,
-    chargesBefore: statsRes.json('charges'),
-    runId: `${Date.now()}-${Math.floor(Math.random() * 1e6)}`,
-  };
+  return { seatId, token, chargesBefore: statsRes.json('charges'), runId };
 }
 
 export default function (data) {
@@ -82,8 +88,8 @@ export default function (data) {
 
   const res = http.post(
     `${BASE_URL}/api/bookings`,
-    JSON.stringify({ seatId: data.seatId, userId: data.userId }),
-    { headers: { ...JSON_HEADERS, 'Idempotency-Key': key } }
+    JSON.stringify({ seatId: data.seatId }),
+    { headers: { ...JSON_HEADERS, Authorization: `Bearer ${data.token}`, 'Idempotency-Key': key } }
   );
 
   const status = res.status;
@@ -102,10 +108,4 @@ export function teardown(data) {
   const statsRes = http.get(`${BASE_URL}/api/test/payment-stats`);
   paymentCharges.add(statsRes.json('charges') - data.chargesBefore);
   console.log(`seatId=${data.seatId} mode=${MODE} vus=${VUS}`);
-}
-
-function fakeUuid() {
-  const hex = (n) =>
-    Array.from({ length: n }, () => Math.floor(Math.random() * 16).toString(16)).join('');
-  return `${hex(8)}-${hex(4)}-${hex(4)}-${hex(4)}-${hex(12)}`;
 }
