@@ -10,7 +10,7 @@ const lockSuccess = new Counter('seat_lock_success');
 const lockConflict = new Counter('seat_lock_conflict');
 const lockUnexpected = new Counter('seat_lock_unexpected');
 
-http.setResponseCallback(http.expectedStatuses(200, 409));
+http.setResponseCallback(http.expectedStatuses(200, 201, 409));
 
 export const options = {
   scenarios: {

@@ -90,6 +90,7 @@ Known limitations: an access token stays valid for up to 15 minutes after logout
 - Seat and booking routes require a Bearer token. The acting user always comes from the verified token; a `userId` in the request body is ignored, so identity cannot be spoofed.
 - `GET /api/bookings/:id` returns `404` (not `403`) for someone else's booking, so booking ids cannot be probed.
 - `POST /api/events` is still unauthenticated; admin roles are planned.
+- **Foreign keys** tie `seats.locked_by` and `bookings.user_id` to `users`, so the database itself rejects a lock or booking for a user that does not exist. A validly signed token for a deleted user returns `401`, not `500`.
 
 ## Booking and idempotency
 
@@ -157,24 +158,22 @@ k6 fires N virtual users at the **same seat** at the same instant. The test is c
 
 Results are cross-checked against the database: one row, `LOCKED`, a single `locked_by`.
 
-Re-running against a seat whose earlier lock had expired also produced exactly one winner, which shows the lazy-expiry path is atomic as well.
-
-Run it yourself (use a fresh seat every time; a seat that is still locked will correctly make the test fail):
+Each run creates its own event, seat and real registered users, so nothing needs to be prepared by hand and runs do not interfere with each other. Start the server with a low bcrypt cost so registering hundreds of users stays quick (test only; never use this in production):
 
 ```bash
-SEAT_ID=$(curl -s -X POST localhost:5000/api/events -H "Content-Type: application/json" \
-  -d '{"name":"LoadTest","eventTime":"2026-12-01T19:00:00Z","totalSeats":1}' \
-  | node -pe 'JSON.parse(require("fs").readFileSync(0,"utf8")).seats[0].id')
+BCRYPT_COST=4 npm run dev
 
-k6 run -e SEAT_ID=$SEAT_ID tests/load/seat-lock-test.js                 # 100 users
-k6 run -e SEAT_ID=$SEAT_ID -e VUS=500 tests/load/seat-lock-test.js      # 500 users
+k6 run -e VUS=100 tests/load/seat-lock-test.js   # 100 users
+k6 run -e VUS=500 tests/load/seat-lock-test.js   # 500 users
 ```
+
+Every virtual user is a different authenticated account, so this exercises the full path: JWT verification, then the atomic lock.
 
 Note: this measures worst-case contention on a single row. Real traffic is spread across many seats, which is lower contention per row.
 
 ### Booking concurrency
 
-`tests/load/booking-test.js` builds its own event, seat and lock, then fires N parallel booking requests. It fails unless exactly one booking is created **and the payment gateway is charged exactly once** (counted by the mock gateway, exposed through a dev-only endpoint that is not mounted in production).
+`tests/load/booking-test.js` registers a user, builds its own event and seat, locks it, then fires N parallel booking requests. It fails unless exactly one booking is created **and the payment gateway is charged exactly once** (counted by the mock gateway, exposed through a dev-only endpoint that is not mounted in production).
 
 | Scenario | Requests | 201 | 409 | 200/202 (replay) | Unexpected | Gateway charges | DB rows |
 |---|---|---|---|---|---|---|---|
