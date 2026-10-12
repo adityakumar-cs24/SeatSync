@@ -4,13 +4,11 @@ const { isUuid } = require('../utils/validators');
 async function lockSeat(req, res) {
   try {
     const { seatId } = req.params;
-    const { userId } = req.body ?? {};
-
-    if (!isUuid(seatId) || !isUuid(userId)) {
-      return res.status(400).json({ error: 'seatId and userId must be valid UUIDs' });
+    if (!isUuid(seatId)) {
+      return res.status(400).json({ error: 'seatId must be a valid UUID' });
     }
 
-    const result = await seatService.lockSeat(seatId, userId);
+    const result = await seatService.lockSeat(seatId, req.user.id);
 
     if (result.error === 'NOT_FOUND') {
       return res.status(404).json({ error: 'Seat not found' });
@@ -29,13 +27,11 @@ async function lockSeat(req, res) {
 async function releaseSeat(req, res) {
   try {
     const { seatId } = req.params;
-    const { userId } = req.body ?? {};
-
-    if (!isUuid(seatId) || !isUuid(userId)) {
-      return res.status(400).json({ error: 'seatId and userId must be valid UUIDs' });
+    if (!isUuid(seatId)) {
+      return res.status(400).json({ error: 'seatId must be a valid UUID' });
     }
 
-    const seat = await seatService.releaseSeat(seatId, userId);
+    const seat = await seatService.releaseSeat(seatId, req.user.id);
 
     if (!seat) {
       return res.status(404).json({ error: 'No active lock held by this user on this seat' });

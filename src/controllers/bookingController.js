@@ -29,13 +29,13 @@ function sendResult(res, { code, booking, replayed }) {
 async function createBooking(req, res) {
   try {
     const idempotencyKey = req.get('Idempotency-Key');
-    const { seatId, userId, simulate } = req.body ?? {};
+    const { seatId, simulate } = req.body ?? {};
 
     if (!idempotencyKey || idempotencyKey.length < 8 || idempotencyKey.length > 255) {
       return res.status(400).json({ error: 'Idempotency-Key header is required (8-255 characters)' });
     }
-    if (!isUuid(seatId) || !isUuid(userId)) {
-      return res.status(400).json({ error: 'seatId and userId must be valid UUIDs' });
+    if (!isUuid(seatId)) {
+      return res.status(400).json({ error: 'seatId must be a valid UUID' });
     }
     if (simulate !== undefined && simulate !== 'fail') {
       return res.status(400).json({ error: "simulate, if provided, must be 'fail'" });
@@ -43,7 +43,7 @@ async function createBooking(req, res) {
 
     const result = await bookingService.createBooking({
       seatId: seatId.toLowerCase(),
-      userId: userId.toLowerCase(),
+      userId: req.user.id,
       idempotencyKey,
       simulate,
     });
@@ -60,8 +60,11 @@ async function getBooking(req, res) {
     if (!isUuid(bookingId)) {
       return res.status(400).json({ error: 'Invalid bookingId' });
     }
+
     const booking = await bookingService.getBookingById(bookingId);
-    if (!booking) {
+
+    // Someone else's booking looks exactly like a missing one, so ids can't be probed.
+    if (!booking || booking.user_id !== req.user.id) {
       return res.status(404).json({ error: 'Booking not found' });
     }
     res.status(200).json({ booking });
