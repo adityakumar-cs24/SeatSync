@@ -69,6 +69,18 @@ const bookSeat = (token, seatId, idempotencyKey, extra = {}) =>
     .set('Idempotency-Key', idempotencyKey)
     .send({ seatId, ...extra });
 
+// The booking route sheds load with 503 + Retry-After while the DB pool is saturated, so a
+// well-behaved client retries. This helper behaves like one.
+async function bookSeatRetry(token, seatId, idempotencyKey, extra = {}, attempts = 20) {
+  let res;
+  for (let i = 0; i < attempts; i++) {
+    res = await bookSeat(token, seatId, idempotencyKey, extra);
+    if (res.status !== 503) return res;
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  return res;
+}
+
 async function seatRow(seatId) {
   const { rows } = await pool.query(
     'SELECT status, locked_by, locked_until FROM seats WHERE id = $1',
@@ -90,6 +102,7 @@ module.exports = {
   lockSeat,
   releaseSeat,
   bookSeat,
+  bookSeatRetry,
   seatRow,
   closeDb,
 };

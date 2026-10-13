@@ -28,7 +28,7 @@ function rateLimit({ name, limit, windowMs, keyFn }) {
     let count;
     let ttlMs;
     try {
-      const key = `rl:${name}:${keyFn(req)}`;
+      const key = `${process.env.RATE_LIMIT_PREFIX || 'rl'}:${name}:${keyFn(req)}`;
       [count, ttlMs] = await getApiRedis().eval(SCRIPT, 1, key, windowMs);
     } catch (err) {
       // Fail open: a broken rate limiter must not take the whole API down with it.

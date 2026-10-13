@@ -15,7 +15,6 @@ function getApiRedis() {
   if (!apiClient) {
     apiClient = new IORedis(process.env.REDIS_URL, {
       maxRetriesPerRequest: 1,
-      enableOfflineQueue: false,
       connectTimeout: 1000,
       commandTimeout: 500,
     });

@@ -4,7 +4,7 @@ const app = require('../../src/app');
 const pool = require('../../src/config/db');
 const paymentService = require('../../src/services/paymentService');
 const {
-  createUser, createEvent, lockSeat, bookSeat, bearer, uniq, closeDb,
+  createUser, createEvent, lockSeat, bookSeat, bookSeatRetry, bearer, uniq, closeDb,
 } = require('../support/helpers');
 
 afterAll(closeDb);
@@ -120,7 +120,7 @@ describe('idempotency', () => {
     const before = charges();
 
     const results = await Promise.all(
-      Array.from({ length: 50 }, () => bookSeat(user.accessToken, seatId, key))
+      Array.from({ length: 50 }, () => bookSeatRetry(user.accessToken, seatId, key))
     );
     const codes = results.map((r) => r.status);
 
@@ -136,7 +136,7 @@ describe('idempotency', () => {
     const before = charges();
 
     const results = await Promise.all(
-      Array.from({ length: 50 }, (_, i) => bookSeat(user.accessToken, seatId, `key-${uniq()}-${i}`))
+      Array.from({ length: 50 }, (_, i) => bookSeatRetry(user.accessToken, seatId, `key-${uniq()}-${i}`))
     );
     const codes = results.map((r) => r.status);
 
