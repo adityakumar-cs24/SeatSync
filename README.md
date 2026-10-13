@@ -1,5 +1,7 @@
 # SeatSync
 
+[![CI](https://github.com/adityakumar-cs24/SeatSync/actions/workflows/ci.yml/badge.svg)](https://github.com/adityakumar-cs24/SeatSync/actions/workflows/ci.yml)
+
 A high-concurrency event booking backend inspired by BookMyShow and IRCTC. It is built around one hard problem: when hundreds of users try to reserve the same seat at the same instant, exactly one of them must win.
 
 ## Status: 🚧 In Progress
@@ -14,7 +16,7 @@ A high-concurrency event booking backend inspired by BookMyShow and IRCTC. It is
 - [x] Authentication: register, login, access and refresh tokens, protected seat and booking routes
 - [x] Roles (admin-only event creation)
 - [ ] Payment webhooks
-- [ ] Redis lock layer
+- [ ] Rate limiting (Redis)
 - [x] Background jobs (BullMQ reconciler)
 - [ ] Real-time seat updates (Socket.io)
 
@@ -210,6 +212,20 @@ k6 run -e MODE=same_key -e VUS=20 tests/load/booking-test.js
 ```
 
 Pool exhaustion is also a consistency risk, not only an availability one: a request whose final database step cannot get a connection after the gateway has charged would leave a `PENDING` booking. Failing fast with `503` when the pool is saturated is planned.
+
+## Running the tests
+
+```bash
+docker-compose up -d     # PostgreSQL must be running
+npm test                 # integration tests (~50 tests, about 6 seconds)
+npm run test:pool        # connection pool regression test (runs with a pool of 2)
+```
+
+The tests run against a real PostgreSQL, because the guarantees being tested (row locks, partial unique indexes, foreign keys) live in the database and cannot be mocked. They use a separate `booking_test` database that is dropped and recreated with all migrations on every run, and the setup refuses to touch any database whose name does not contain `test`. Each test creates its own users and events, so tests do not depend on each other. Redis is not needed.
+
+The suite covers registration, login and token handling, seat locking, booking idempotency, the reconciler, and several concurrency scenarios (50 parallel requests for one seat or one idempotency key). Mutation checks: breaking the lock condition or reverting the pool fix makes the suite fail.
+
+CI (GitHub Actions) runs the same commands against a PostgreSQL service container on every push.
 
 ## Design decisions
 
