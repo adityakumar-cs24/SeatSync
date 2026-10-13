@@ -199,7 +199,17 @@ The charge counter is in-memory and per process, so it is only valid for a singl
 
 ## Found by load testing
 
-Fifty parallel retries with the same idempotency key exposed a connection-pool starvation bug. `reserveForPayment` held a pooled client open while calling `pool.query` for the idempotency lookup. With more concurrent requests than pool connections (50 against a pool of 20), every held client ended up waiting for a second connection that could never be released, until the 5 second connection timeout fired and the requests failed with `500`. Payments stayed correct (one booking, one charge) but availability did not. The fix runs the lookup on the client already held, so a request never needs two connections at once. Earlier runs passed only because they finished too quickly to fill the pool.
+Fifty parallel retries with the same idempotency key once produced `500`s: 41 of 50 requests failed after about 5 seconds, although payment stayed correct (one booking, one charge). The cause was nested pool acquisition: `reserveForPayment` held a pooled client while its idempotency lookup called `pool.query`, which needs a second connection. When more requests are in flight than the pool has connections, every held client waits for a connection that can only be freed by another waiting request, until the 5 second `connectionTimeoutMillis` fires. The fix runs the lookup on the client already held.
+
+The bug is timing dependent, so it is reproduced with a small pool. With `DB_POOL_MAX=3` and 20 parallel same-key requests, the fixed code passed 3 of 3 runs (max latency about 330 ms). With the fix reverted, 2 of 3 runs failed with 16 to 18 of 20 requests returning `500` after about 5 s (the stack traces show the connection timeout inside the nested lookup), and 1 run passed by timing luck.
+
+```bash
+DB_POOL_MAX=3 BCRYPT_COST=4 npm run dev
+k6 run -e MODE=same_key -e VUS=20 tests/load/booking-test.js
+# to see the failure, first run: git revert --no-commit 1bfd3bf
+```
+
+Pool exhaustion is also a consistency risk, not only an availability one: a request whose final database step cannot get a connection after the gateway has charged would leave a `PENDING` booking. Failing fast with `503` when the pool is saturated is planned.
 
 ## Design decisions
 
