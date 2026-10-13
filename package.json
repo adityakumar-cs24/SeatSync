@@ -10,7 +10,8 @@
     "worker": "node src/worker.js",
     "dev:worker": "nodemon src/worker.js",
     "make-admin": "node scripts/make-admin.js",
-    "test": "jest --runInBand"
+    "test": "jest --runInBand",
+    "test:pool": "DB_POOL_MAX=2 jest --runInBand tests/integration/poolRegression.test.js"
   },
   "repository": {
     "type": "git",
