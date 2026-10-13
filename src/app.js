@@ -7,6 +7,10 @@ const seatRoutes = require('./routes/seatRoutes');
 const bookingRoutes = require('./routes/bookingRoutes');
 const authRoutes = require('./routes/authRoutes');
 const app = express();
+// Behind a reverse proxy (nginx, a cloud load balancer) the real client address arrives in X-Forwarded-For.
+// Set TRUST_PROXY to the number of proxy hops. Leave it unset when the API is exposed directly,
+// otherwise any client could spoof its IP and dodge the rate limits.
+if (process.env.TRUST_PROXY) app.set('trust proxy', parseInt(process.env.TRUST_PROXY, 10));
 
 app.use(helmet());
 app.use(cors());
