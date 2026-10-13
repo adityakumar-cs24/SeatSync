@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: booking_user
+          POSTGRES_PASSWORD: booking_pass
+          POSTGRES_DB: booking_db
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U booking_user -d booking_db"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql://booking_user:booking_pass@localhost:5432/booking_db
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Audit production dependencies
+        run: npm audit --omit=dev
+
+      - name: Integration tests
+        run: npm test
+
+      - name: Connection pool regression test
+        run: npm run test:pool
