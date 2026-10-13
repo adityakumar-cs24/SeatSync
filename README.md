@@ -216,12 +216,12 @@ Pool exhaustion is also a consistency risk, not only an availability one: a requ
 ## Running the tests
 
 ```bash
-docker-compose up -d     # PostgreSQL must be running
+docker-compose up -d     # PostgreSQL and Redis must be running
 npm test                 # integration tests (~50 tests, about 6 seconds)
 npm run test:pool        # connection pool regression test (runs with a pool of 2)
 ```
 
-The tests run against a real PostgreSQL, because the guarantees being tested (row locks, partial unique indexes, foreign keys) live in the database and cannot be mocked. They use a separate `booking_test` database that is dropped and recreated with all migrations on every run, and the setup refuses to touch any database whose name does not contain `test`. Each test creates its own users and events, so tests do not depend on each other. Redis is not needed.
+The tests run against a real PostgreSQL, because the guarantees being tested (row locks, partial unique indexes, foreign keys) live in the database and cannot be mocked. They use a separate `booking_test` database that is dropped and recreated with all migrations on every run, and the setup refuses to touch any database whose name does not contain `test`. Each test creates its own users and events, so tests do not depend on each other. Redis is only needed by the rate limiter tests.
 
 The suite covers registration, login and token handling, seat locking, booking idempotency, the reconciler, and several concurrency scenarios (50 parallel requests for one seat or one idempotency key). Mutation checks: breaking the lock condition or reverting the pool fix makes the suite fail.
 
