@@ -16,7 +16,7 @@ A high-concurrency event booking backend inspired by BookMyShow and IRCTC. It is
 - [x] Authentication: register, login, access and refresh tokens, protected seat and booking routes
 - [x] Roles (admin-only event creation)
 - [ ] Payment webhooks
-- [ ] Rate limiting (Redis)
+- [x] Rate limiting (Redis) and load shedding
 - [x] Background jobs (BullMQ reconciler)
 - [ ] Real-time seat updates (Socket.io)
 
@@ -86,13 +86,32 @@ Users register with email and password and receive a short-lived JWT access toke
 - **Refresh races are atomic.** Revocation is a single `UPDATE ... WHERE revoked_at IS NULL`, the same pattern as seat locking. Ten parallel refreshes with one token produce exactly one success.
 - **Logout** revokes the whole session and always returns `204`, so it cannot be used to probe for valid tokens.
 
-Known limitations: an access token stays valid for up to 15 minutes after logout (it is stateless; the short expiry is the trade-off). Two browser tabs refreshing the same token at once will both be logged out; production systems usually allow a short grace window. Expired refresh tokens are not purged yet, and login and refresh are not rate limited.
+Known limitations: an access token stays valid for up to 15 minutes after logout (it is stateless; the short expiry is the trade-off). Two browser tabs refreshing the same token at once will both be logged out; production systems usually allow a short grace window. Expired refresh tokens are not purged yet.
 
 **Authorization:**
 - Seat and booking routes require a Bearer token. The acting user always comes from the verified token; a `userId` in the request body is ignored, so identity cannot be spoofed.
 - `GET /api/bookings/:id` returns `404` (not `403`) for someone else's booking, so booking ids cannot be probed.
 - **Roles:** `POST /api/events` is admin-only (`403` for normal users). The role is read from the database on every admin request, not from the token, so demoting an admin takes effect immediately instead of after the token expires. A `role` sent at registration is ignored, and admins can only be created with a CLI script (`npm run make-admin -- <email>`), so there is no API path to privilege escalation.
 - **Foreign keys** tie `seats.locked_by` and `bookings.user_id` to `users`, so the database itself rejects a lock or booking for a user that does not exist. A validly signed token for a deleted user returns `401`, not `500`.
+
+## Rate limiting and load shedding
+
+Counters live in Redis, so the limits hold across several API instances. Each check is one atomic Lua script (`INCR`, set the expiry on the first hit, read the remaining time), so concurrent requests can never all read "limit minus one" and slip through. Ten parallel logins against a limit of five produce exactly five passes and five `429`s.
+
+| Route | Key | Limit |
+|---|---|---|
+| `POST /api/auth/login` | IP and email | 5 per 15 min (plus 30 per 15 min per IP across all emails) |
+| `POST /api/auth/register` | IP | 10 per hour |
+| `POST /api/auth/refresh` | IP | 30 per 15 min |
+| `POST /api/seats/:id/lock` | user | 30 per minute |
+
+Rejected requests get `429` with `Retry-After` and `RateLimit-*` headers. Behind a reverse proxy set `TRUST_PROXY` to the number of hops, otherwise every client looks like the proxy; leave it unset when the API is exposed directly, otherwise clients could spoof their IP through `X-Forwarded-For`.
+
+**Fails open:** if Redis is unreachable the request is served instead of rejected (a broken limiter must not take the whole API down). The cost is that limits are not enforced during a Redis outage.
+
+**Pool saturation:** when requests are already queued for a database connection, `POST /api/bookings` answers `503` with `Retry-After` immediately instead of making the client wait for the 5 second connection timeout and fail with `500`. Clients are expected to retry; the tests and the load test do.
+
+Limitations: the window is fixed, so a client can send up to twice the limit around a window boundary; a sliding window or token bucket would fix that. Load tests register hundreds of users from one IP, so start the server with `RATE_LIMIT_ENABLED=false` when running them. The pool guard sheds as soon as one request is queued (`POOL_GUARD_MAX_WAITING`, default 0), which is conservative.
 
 ## Booking and idempotency
 
@@ -173,7 +192,7 @@ npm run make-admin -- "$ADMIN_EMAIL"
 Each run creates its own event, seat and real registered users, so nothing needs to be prepared by hand and runs do not interfere with each other. Start the server with a low bcrypt cost so registering hundreds of users stays quick (test only; never use this in production):
 
 ```bash
-BCRYPT_COST=4 npm run dev
+RATE_LIMIT_ENABLED=false BCRYPT_COST=4 npm run dev
 
 k6 run -e VUS=100 tests/load/seat-lock-test.js   # 100 users
 k6 run -e VUS=500 tests/load/seat-lock-test.js   # 500 users
