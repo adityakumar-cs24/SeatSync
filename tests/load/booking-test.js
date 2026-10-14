@@ -1,4 +1,5 @@
 import http from 'k6/http';
+import { sleep } from 'k6';
 import { Counter } from 'k6/metrics';
 import { createEvent } from './helpers.js';
 
@@ -12,9 +13,10 @@ const bookingCreated = new Counter('booking_created');       // 201
 const bookingReplay = new Counter('booking_replay');         // 200 / 202
 const bookingConflict = new Counter('booking_conflict');     // 409
 const bookingUnexpected = new Counter('booking_unexpected'); // anything not allowed in this mode
-const paymentCharges = new Counter('payment_charges');       // gateway calls during the test
+const paymentCharges = new Counter('payment_charges');
+const shedRetries = new Counter('booking_503_retries'); // load shed by the DB pool guard       // gateway calls during the test
 
-http.setResponseCallback(http.expectedStatuses(200, 201, 202, 409));
+http.setResponseCallback(http.expectedStatuses(200, 201, 202, 409, 503));
 
 const thresholds = {
   booking_created: ['count==1'],
@@ -81,11 +83,18 @@ export default function (data) {
   const key =
     MODE === 'same_key' ? `load-${data.runId}-shared` : `load-${data.runId}-vu${__VU}`;
 
-  const res = http.post(
-    `${BASE_URL}/api/bookings`,
-    JSON.stringify({ seatId: data.seatId }),
-    { headers: { ...JSON_HEADERS, Authorization: `Bearer ${data.token}`, 'Idempotency-Key': key } }
-  );
+  const params = {
+    headers: { ...JSON_HEADERS, Authorization: `Bearer ${data.token}`, 'Idempotency-Key': key },
+  };
+  const body = JSON.stringify({ seatId: data.seatId });
+
+  // The API answers 503 + Retry-After while its DB pool is saturated; a well-behaved client retries.
+  let res = http.post(`${BASE_URL}/api/bookings`, body, params);
+  for (let attempt = 0; attempt < 40 && res.status === 503; attempt++) {
+    shedRetries.add(1);
+    sleep(0.05);
+    res = http.post(`${BASE_URL}/api/bookings`, body, params);
+  }
 
   const status = res.status;
   if (status === 201) {
