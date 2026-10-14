@@ -216,6 +216,8 @@ k6 run -e MODE=different_keys -e VUS=50 tests/load/booking-test.js
 k6 run -e MODE=same_key -e VUS=50 tests/load/booking-test.js
 ```
 
+When the database pool is saturated the API sheds booking requests with `503`; the load test retries them like a real client (28 retries in a typical 50-user run), and the final outcome is still exactly one booking and one charge.
+
 The charge counter is in-memory and per process, so it is only valid for a single server instance.
 
 ## Found by load testing
@@ -236,7 +238,7 @@ Pool exhaustion is also a consistency risk, not only an availability one: a requ
 
 ```bash
 docker-compose up -d     # PostgreSQL and Redis must be running
-npm test                 # integration tests (~50 tests, about 6 seconds)
+npm test                 # integration tests (about 60 tests, a few seconds)
 npm run test:pool        # connection pool regression test (runs with a pool of 2)
 ```
 
