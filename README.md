@@ -4,7 +4,17 @@
 
 A high-concurrency event booking backend inspired by BookMyShow and IRCTC. It is built around one hard problem: when hundreds of users try to reserve the same seat at the same instant, exactly one of them must win.
 
-## Status: 🚧 In Progress
+## What this project demonstrates
+
+Every claim below is backed by a test or a load test in this repository.
+
+- **One winner per seat under contention.** 500 authenticated users race for the same seat: exactly 1 succeeds, 499 get `409` (k6, cross-checked against the database).
+- **Exactly-once payment.** 50 parallel booking requests (same idempotency key, or different keys) produce one booking and one gateway charge. A partial unique index is the last line of defence.
+- **A real bug found by load testing**, reproduced deterministically with a tiny connection pool and kept as a regression test (see "Found by load testing").
+- **Tests that can fail.** About 60 integration tests against a real PostgreSQL and Redis, run in CI. Breaking the lock query or reverting the pool fix makes the suite fail.
+- **Production concerns:** JWT with rotating refresh tokens and reuse detection, atomic Redis rate limiting, load shedding, a crash-recovery job, and a one-command Docker setup.
+
+## Status: core backend complete
 
 ## Roadmap
 - [x] Project setup, Express server, health check
@@ -41,6 +51,43 @@ A high-concurrency event booking backend inspired by BookMyShow and IRCTC. It is
 | POST | `/api/auth/refresh` | Exchange a refresh token for a new access and refresh token | 200, 400, 401 |
 | POST | `/api/auth/logout` | Revoke the session (`{ "refreshToken" }`) | 204, 400 |
 | GET | `/api/auth/me` | Current user (needs `Authorization: Bearer <token>`) | 200, 401 |
+
+## Architecture
+
+```mermaid
+flowchart LR
+  C[Client] --> API
+  subgraph API[API process]
+    MW[Rate limiter, JWT auth, pool guard] --> H[Controllers and services]
+  end
+  H --> PG[(PostgreSQL)]
+  H --> PAY[Payment gateway - mock]
+  MW --> R[(Redis)]
+  subgraph W[Worker process]
+    J[BullMQ reconciler job]
+  end
+  J --> R
+  J --> PG
+```
+
+PostgreSQL is the source of truth for seats, bookings and users. Redis holds only rate-limit counters and the job queue, so losing it never corrupts a booking.
+
+Booking flow. The payment call sits outside any database transaction, so a slow gateway never holds a row lock or a pooled connection:
+
+```mermaid
+sequenceDiagram
+  participant U as Client
+  participant A as API
+  participant D as PostgreSQL
+  participant P as Payment gateway
+  U->>A: POST /api/bookings (Idempotency-Key)
+  A->>D: Phase 1: lock the seat row, check the caller holds the lock, insert PENDING booking
+  Note over A,D: Only the request that inserts the PENDING row continues
+  A->>P: Phase 2: charge
+  P-->>A: result
+  A->>D: Phase 3: seat BOOKED and booking CONFIRMED (or booking FAILED)
+  A-->>U: 201 (a retry with the same key gets 200 and the same booking)
+```
 
 ## How double-booking is prevented
 
@@ -273,6 +320,15 @@ The tests run against a real PostgreSQL, because the guarantees being tested (ro
 The suite covers registration, login and token handling, seat locking, booking idempotency, the reconciler, and several concurrency scenarios (50 parallel requests for one seat or one idempotency key). Mutation checks: breaking the lock condition or reverting the pool fix makes the suite fail.
 
 CI (GitHub Actions) runs the same commands against a PostgreSQL service container on every push.
+
+## Known limitations
+
+- **The payment gateway is a mock.** It exposes `charge` and `refund` so a real adapter can replace it, but there are no payment webhooks yet. With a real gateway, a stale `PENDING` booking must be resolved by asking the gateway, not simply failed.
+- **No frontend and no real-time updates** (Socket.io is on the roadmap).
+- **Access tokens stay valid for up to 15 minutes after logout.** They are stateless; the short expiry is the trade-off.
+- **Fixed-window rate limiting** allows up to twice the limit around a window boundary. The limiter fails open if Redis is down.
+- **The charge counter used by the booking load test is in-memory and per process**, so it is only valid for a single API instance.
+- **Load tests were run on a laptop against local containers.** They show correctness under contention, not production capacity.
 
 ## Design decisions
 
