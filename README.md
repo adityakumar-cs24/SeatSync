@@ -256,6 +256,7 @@ This starts PostgreSQL, Redis, a one-off `migrate` job, the API on port 5000 and
 - `.env` is excluded from the image (`.dockerignore`); configuration is passed as environment variables by Compose. `JWT_ACCESS_SECRET` must be set in `.env`.
 - The containers run with `NODE_ENV=production`, so the test-only routes and the `simulate` payment hook are disabled. The payment gateway is still the mock one.
 - Stop the stack with `docker-compose --profile app down` (volumes are kept).
+- The database and Redis credentials in `docker-compose.yml` are for local use only. A real deployment would inject them as secrets, run Redis with a password, and not publish the database port.
 
 Stop `npm run dev` before starting the API container, both use port 5000. The load tests need the dev server, because they read the mock gateway's charge counter through a test route.
 
