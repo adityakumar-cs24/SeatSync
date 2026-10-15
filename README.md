@@ -21,7 +21,7 @@ A high-concurrency event booking backend inspired by BookMyShow and IRCTC. It is
 - [ ] Real-time seat updates (Socket.io)
 
 ## Tech Stack
-**Used so far:** Node.js, Express 5, PostgreSQL 16 (raw `pg`, no ORM), `node-pg-migrate`, Docker Compose, Redis + BullMQ, JWT + bcrypt, k6
+**Used so far:** Node.js, Express 5, PostgreSQL 16 (raw `pg`, no ORM), `node-pg-migrate`, Docker Compose, Redis + BullMQ, JWT + bcrypt, Docker, GitHub Actions, k6
 
 **Planned:** Socket.io, Stripe (test mode)
 
@@ -233,6 +233,31 @@ k6 run -e MODE=same_key -e VUS=20 tests/load/booking-test.js
 ```
 
 Pool exhaustion is also a consistency risk, not only an availability one: a request whose final database step cannot get a connection after the gateway has charged would leave a `PENDING` booking. Failing fast with `503` when the pool is saturated is planned.
+
+## Running everything in Docker
+
+```bash
+cp .env.example .env
+```
+
+Replace `JWT_ACCESS_SECRET` in `.env` with a random value first, otherwise the API would run with a publicly known secret:
+
+```bash
+node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"
+```
+
+```bash
+docker-compose --profile app up --build -d
+```
+
+This starts PostgreSQL, Redis, a one-off `migrate` job, the API on port 5000 and the background worker. The API and worker wait for the migrations to finish before they start. Plain `docker-compose up -d` still starts only PostgreSQL and Redis, which is what local development and the tests need.
+
+- One multi-stage image serves both the API and the worker. The `runtime` stage contains production dependencies only and runs as the unprivileged `node` user; the `migrate` stage keeps `node-pg-migrate`, a dev dependency.
+- `.env` is excluded from the image (`.dockerignore`); configuration is passed as environment variables by Compose. `JWT_ACCESS_SECRET` must be set in `.env`.
+- The containers run with `NODE_ENV=production`, so the test-only routes and the `simulate` payment hook are disabled. The payment gateway is still the mock one.
+- Stop the stack with `docker-compose --profile app down` (volumes are kept).
+
+Stop `npm run dev` before starting the API container, both use port 5000. The load tests need the dev server, because they read the mock gateway's charge counter through a test route.
 
 ## Running the tests
 
