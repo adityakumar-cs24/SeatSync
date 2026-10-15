@@ -59,3 +59,8 @@ jobs:
 
       - name: Connection pool regression test
         run: npm run test:pool
+
+      - name: Build Docker images
+        run: |
+          docker build --target runtime -t seatsync:ci .
+          docker build --target migrate -t seatsync-migrate:ci .
