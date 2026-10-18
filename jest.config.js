@@ -1,6 +1,6 @@
 module.exports = {
   testEnvironment: 'node',
-  testMatch: ['<rootDir>/tests/integration/**/*.test.js'],
+  testMatch: ['<rootDir>/tests/integration/**/*.test.js', '<rootDir>/tests/unit/**/*.test.js'],
   globalSetup: '<rootDir>/tests/support/globalSetup.js',
   setupFiles: ['<rootDir>/tests/support/setupEnv.js'],
   testTimeout: 30000,
