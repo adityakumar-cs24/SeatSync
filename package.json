@@ -11,7 +11,8 @@
     "dev:worker": "nodemon src/worker.js",
     "make-admin": "node scripts/make-admin.js",
     "test": "jest --runInBand",
-    "test:pool": "DB_POOL_MAX=2 jest --runInBand tests/integration/poolRegression.test.js"
+    "test:pool": "DB_POOL_MAX=2 jest --runInBand tests/integration/poolRegression.test.js",
+    "razorpay:smoke": "node scripts/razorpay-smoke.js"
   },
   "repository": {
     "type": "git",
