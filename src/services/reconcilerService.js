@@ -9,7 +9,7 @@ async function failStalePendingBookings() {
     `UPDATE bookings
      SET status = 'FAILED', failure_reason = 'STALE_PENDING_TIMEOUT', updated_at = NOW()
      WHERE status = 'PENDING'
-       AND created_at < NOW() - make_interval(secs => $1)
+       AND COALESCE(expires_at, created_at + make_interval(secs => $1)) < NOW()
      RETURNING id, seat_id`,
     [STALE_PENDING_SECONDS]
   );

@@ -1,4 +1,5 @@
 const express = require('express');
+const webhookRoutes = require('./routes/webhookRoutes');
 const cors = require('cors');
 const helmet = require('helmet');
 const morgan = require('morgan');
@@ -15,6 +16,8 @@ if (process.env.TRUST_PROXY) app.set('trust proxy', parseInt(process.env.TRUST_P
 app.use(helmet());
 app.use(cors());
 if (process.env.NODE_ENV !== 'test') app.use(morgan('dev'));
+// Webhooks need the raw body for signature verification, so they are mounted before the JSON parser.
+app.use('/api/webhooks', webhookRoutes);
 app.use(express.json());
 
 app.get('/health', (req, res) => {

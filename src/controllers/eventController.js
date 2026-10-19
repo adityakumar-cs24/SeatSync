@@ -4,9 +4,12 @@ const seatModel = require('../models/seatModel');
 const { isUuid } = require('../utils/validators');
 
 const MAX_SEATS = 500;
+const DEFAULT_PRICE_PAISE = 10000; // Rs 100
+const MIN_PRICE_PAISE = 100; // the gateway minimum (Rs 1)
+const MAX_PRICE_PAISE = 10000000; // Rs 1,00,000
 
 async function createEvent(req, res) {
-  const { name, venue, eventTime, totalSeats } = req.body ?? {};
+  const { name, venue, eventTime, totalSeats, pricePaise = DEFAULT_PRICE_PAISE } = req.body ?? {};
 
   if (!name || !eventTime || totalSeats === undefined) {
     return res.status(400).json({ error: 'name, eventTime, and totalSeats are required' });
@@ -18,10 +21,14 @@ async function createEvent(req, res) {
     return res.status(400).json({ error: 'eventTime must be a valid date' });
   }
 
+  if (!Number.isInteger(pricePaise) || pricePaise < MIN_PRICE_PAISE || pricePaise > MAX_PRICE_PAISE) {
+    return res.status(400).json({ error: `pricePaise must be an integer between ${MIN_PRICE_PAISE} and ${MAX_PRICE_PAISE}` });
+  }
+
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
-    const event = await eventModel.createEvent({ name, venue, eventTime }, client);
+    const event = await eventModel.createEvent({ name, venue, eventTime, pricePaise }, client);
     const seatNumbers = Array.from({ length: totalSeats }, (_, i) => `A${i + 1}`);
     const seats = await seatModel.createSeatsBulk(event.id, seatNumbers, client);
     await client.query('COMMIT');
