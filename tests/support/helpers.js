@@ -44,12 +44,12 @@ function getAdmin() {
   return adminPromise;
 }
 
-async function createEvent(totalSeats = 3) {
+async function createEvent(totalSeats = 3, pricePaise) {
   const admin = await getAdmin();
   const res = await request(app)
     .post('/api/events')
     .set(bearer(admin.accessToken))
-    .send({ name: `Event ${uniq()}`, eventTime: '2030-01-01T19:00:00Z', totalSeats });
+    .send({ name: `Event ${uniq()}`, eventTime: '2030-01-01T19:00:00Z', totalSeats, ...(pricePaise === undefined ? {} : { pricePaise }) });
   if (res.status !== 201) {
     throw new Error(`event creation failed: ${res.status} ${JSON.stringify(res.body)}`);
   }

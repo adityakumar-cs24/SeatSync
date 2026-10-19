@@ -10,10 +10,16 @@
 //   npm run test:pool
 process.env.POOL_GUARD_MAX_WAITING = '1000000';
 
+const { setPaymentGateway } = require('../../src/services/payment');
+const { createFakeGateway } = require('../support/fakeGateway');
 const { createUser, createEvent, lockSeat, bookSeat, uniq, closeDb } = require('../support/helpers');
 const pool = require('../../src/config/db');
 
-afterAll(closeDb);
+beforeEach(() => setPaymentGateway(createFakeGateway()));
+afterAll(async () => {
+  setPaymentGateway(null);
+  await closeDb();
+});
 
 const runWithTinyPool = pool.options.max <= 3 ? test : test.skip;
 

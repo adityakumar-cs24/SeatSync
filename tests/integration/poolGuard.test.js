@@ -1,9 +1,13 @@
-const request = require('supertest');
-const app = require('../../src/app');
 const pool = require('../../src/config/db');
+const { setPaymentGateway } = require('../../src/services/payment');
+const { createFakeGateway } = require('../support/fakeGateway');
 const { createUser, createEvent, lockSeat, bookSeat, uniq, closeDb } = require('../support/helpers');
 
-afterAll(closeDb);
+beforeEach(() => setPaymentGateway(createFakeGateway()));
+afterAll(async () => {
+  setPaymentGateway(null);
+  await closeDb();
+});
 
 test('a booking request gets an immediate 503 with Retry-After while others are queued for a connection', async () => {
   const user = await createUser();
