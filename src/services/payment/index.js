@@ -18,11 +18,16 @@ function buildRazorpayGateway(config) {
 
 // The rest of the application talks to this object, never to Razorpay directly.
 function getPaymentGateway() {
-  if (!gateway) gateway = buildRazorpayGateway(loadPaymentConfig());
+  if (!gateway) {
+    if (process.env.NODE_ENV === 'test') {
+      throw new Error('No payment gateway is installed in tests. Call setPaymentGateway(fake) so tests never reach the real Razorpay.');
+    }
+    gateway = buildRazorpayGateway(loadPaymentConfig());
+  }
   return gateway;
 }
 
-// Tests install a fake gateway here; passing null resets to the real one.
+// Tests install a fake gateway here; passing null removes it.
 function setPaymentGateway(replacement) {
   gateway = replacement || undefined;
 }
